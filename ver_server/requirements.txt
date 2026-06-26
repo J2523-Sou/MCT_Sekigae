@@ -1,0 +1,2 @@
+# This application intentionally uses only the Python standard library.
+# The file lets Azure App Service identify this directory as a Python app.
