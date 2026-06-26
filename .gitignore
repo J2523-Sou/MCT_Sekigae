@@ -11,4 +11,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!ver_server/.env.azure.example
+ver_server/azure-deploy.zip
 .DS_Store

@@ -33,12 +33,20 @@ ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = ROOT / "seating.db"
 HOST = os.environ.get("SEATING_HOST", "0.0.0.0")
-PORT = int(os.environ.get("SEATING_PORT", "8000"))
+# Azure App Service supplies the port in PORT.  SEATING_PORT is kept as the
+# explicit override used by the local launcher.
+PORT = int(os.environ.get("SEATING_PORT", os.environ.get("PORT", "8000")))
 ADMIN_PASSWORD = os.environ.get("SEATING_ADMIN_PASSWORD", "admin")
 SESSION_SECRET = os.environ.get("SEATING_SESSION_SECRET", secrets.token_hex(32)).encode()
 
+# Set SEATING_DB_PATH=/home/data/seating.db in Azure App Service.  /home is
+# the persistent App Service storage location; the deployed application
+# directory must not be used for runtime data.
+DB_PATH = Path(os.environ.get("SEATING_DB_PATH", str(DB_PATH))).expanduser()
+
 
 def database():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=5)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
