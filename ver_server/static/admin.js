@@ -26,8 +26,8 @@ function render(state) {
   const { settings, excludedSeats, participants, announcementResults = [] } = state;
   const phaseText = settings.phase === 'results' ? '結果公開中' : '投票受付中';
   const excluded = new Set(excludedSeats);
-  const gridMinWidth = settings.columns_count * 44 + Math.max(0, settings.columns_count - 1) * 6;
-  const mapMinWidth = settings.columns_count * 112 + Math.max(0, settings.columns_count - 1) * 6;
+  const gridMinWidth = settings.columns_count * 40 + Math.max(0, settings.columns_count - 1) * 5;
+  const mapMinWidth = settings.columns_count * 96 + Math.max(0, settings.columns_count - 1) * 5;
   const seatButtons = Array.from({ length: settings.rows_count }, (_, row) =>
     Array.from({ length: settings.columns_count }, (_, column) => {
       const code = `${row + 1}-${column + 1}`;

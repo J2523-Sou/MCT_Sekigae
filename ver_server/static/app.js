@@ -49,7 +49,7 @@ function makeClassroomLayout(state, selected) {
   const layout = document.createElement('div');
   layout.className = 'classroom-layout';
   layout.style.setProperty('--columns', state.columns);
-  layout.style.setProperty('--grid-min-width', `${state.columns * 44 + Math.max(0, state.columns - 1) * 6}px`);
+  layout.style.setProperty('--grid-min-width', `${state.columns * 40 + Math.max(0, state.columns - 1) * 5}px`);
   const teacherDesk = document.createElement('div');
   teacherDesk.className = 'teacher-desk';
   teacherDesk.textContent = '教卓';
@@ -90,7 +90,7 @@ function makeResultClassroomLayout(state) {
   const layout = document.createElement('div');
   layout.className = 'classroom-layout result-layout';
   layout.style.setProperty('--columns', state.columns);
-  layout.style.setProperty('--grid-min-width', `${state.columns * 82 + Math.max(0, state.columns - 1) * 6}px`);
+  layout.style.setProperty('--grid-min-width', `${state.columns * 76 + Math.max(0, state.columns - 1) * 5}px`);
   const teacherDesk = document.createElement('div');
   teacherDesk.className = 'teacher-desk';
   teacherDesk.textContent = '教卓';
