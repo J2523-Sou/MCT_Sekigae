@@ -4,11 +4,17 @@ const statusElement = document.querySelector('#status');
 const notice = document.querySelector('#notice');
 let enteredThisVisit = false;
 let lastSeenResultCount = 0;
+let lastRenderedStateKey = '';
+let noticeTimer = null;
 
 function setNotice(message, isOk = false) {
+  clearTimeout(noticeTimer);
   notice.hidden = !message;
   notice.textContent = message || '';
   notice.classList.toggle('ok', isOk);
+  if (message && isOk) {
+    noticeTimer = setTimeout(() => setNotice(''), 5000);
+  }
 }
 
 async function request(url, options = {}) {
@@ -19,6 +25,31 @@ async function request(url, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || '通信に失敗しました。');
   return data;
+}
+
+function stateKey(state) {
+  return JSON.stringify({
+    title: state.title,
+    rows: state.rows,
+    columns: state.columns,
+    excludedSeats: state.excludedSeats,
+    phase: state.phase,
+    participantCount: state.participantCount,
+    myParticipant: state.myParticipant,
+    resultCount: state.resultCount,
+    pendingResultCount: state.pendingResultCount,
+    results: state.results,
+  });
+}
+
+function captureScrollPositions(root = app) {
+  return Array.from(root.querySelectorAll('.classroom-scroll'), (element) => element.scrollLeft);
+}
+
+function restoreScrollPositions(positions, root = app) {
+  root.querySelectorAll('.classroom-scroll').forEach((element, index) => {
+    element.scrollLeft = positions[index] || 0;
+  });
 }
 
 function makeSeatGrid(state, selected) {
@@ -153,7 +184,9 @@ function renderVoting(state) {
   note.className = 'vote-note';
   note.textContent = mine.vote ? `現在の希望：${mine.vote}` : 'まだ席を選んでいません。';
   section.append(note);
+  const scrollPositions = captureScrollPositions();
   app.replaceChildren(section);
+  restoreScrollPositions(scrollPositions);
 }
 
 function renderResults(state) {
@@ -169,33 +202,15 @@ function renderResults(state) {
     : 'すべての結果を発表しました。';
   section.innerHTML = `<h2>席替え結果</h2><p class="help">管理者が抽選して結果を公開しました。${pendingText}</p>`;
   section.append(makeResultClassroomLayout(state));
-  const results = document.createElement('div');
-  results.className = 'results';
   if (!state.results.length) {
-    results.innerHTML = state.resultCount
-      ? '<p class="empty-state">まだ発表されていません。</p>'
-      : '<p class="empty-state">参加者がいません。</p>';
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = state.resultCount ? 'まだ発表されていません。' : '参加者がいません。';
+    section.append(empty);
   }
-  const table = document.createElement('table');
-  table.className = 'results-table';
-  table.innerHTML = '<thead><tr><th scope="col">発表順</th><th scope="col">名前</th><th scope="col">席</th></tr></thead>';
-  const body = document.createElement('tbody');
-  state.results.forEach((result, index) => {
-    const row = document.createElement('tr');
-    const order = document.createElement('td');
-    order.textContent = String(index + 1);
-    const name = document.createElement('td');
-    name.textContent = result.name;
-    const seat = document.createElement('td');
-    seat.className = 'result-seat';
-    seat.textContent = result.seat || '未配置';
-    row.append(order, name, seat);
-    body.append(row);
-  });
-  table.append(body);
-  if (state.results.length) results.append(table);
-  section.append(results);
+  const scrollPositions = captureScrollPositions();
   app.replaceChildren(section);
+  restoreScrollPositions(scrollPositions);
 }
 
 function render(state) {
@@ -218,6 +233,9 @@ function render(state) {
 async function load(silent = false) {
   try {
     const state = await request('/api/state');
+    const nextKey = stateKey(state);
+    if (nextKey === lastRenderedStateKey) return;
+    lastRenderedStateKey = nextKey;
     render(state);
   } catch (error) {
     if (!silent) setNotice(error.message);

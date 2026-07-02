@@ -45,6 +45,8 @@ button:disabled { cursor: wait; opacity: .6; transform: none; }
 .primary { color: white; background: var(--blue); }
 .primary:hover { background: var(--blue-dark); }
 .secondary { color: var(--blue-dark); background: var(--soft); border-color: #b9cef7; }
+.final-publish { color: white; background: var(--success); border-color: var(--success); }
+.final-publish:hover { background: #065f4d; }
 .danger { color: var(--danger); background: #fff; border-color: #e8aaa5; }
 .small { min-height: 36px; padding: 6px 10px; font-size: .82rem; }
 .join-card { max-width: 480px; margin: 0 auto; }
@@ -108,14 +110,6 @@ button:disabled { cursor: wait; opacity: .6; transform: none; }
 .vote-note { min-height: 1.5em; margin: 14px 0 0; color: var(--success); font-weight: 700; }
 .admin-link { margin: 28px 0 0; text-align: center; font-size: .82rem; }
 a { color: var(--blue); }
-.results { overflow-x: auto; margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; }
-.results-table { width: 100%; border-collapse: collapse; background: var(--surface); }
-.results-table th, .results-table td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; }
-.results-table th { color: var(--blue-dark); background: var(--soft); font-size: .86rem; }
-.results-table tbody tr:last-child td { border-bottom: 0; }
-.results-table th:first-child, .results-table td:first-child { width: 74px; text-align: center; }
-.results-table th:last-child, .result-seat { width: 120px; text-align: center; }
-.result-seat { color: var(--blue-dark); font-weight: 800; }
 .empty-state { padding: 20px; color: var(--muted); text-align: center; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .toolbar .spacer { flex: 1; }
@@ -191,9 +185,6 @@ a { color: var(--blue); }
   .toolbar > button { flex: 1 1 140px; }
   .settings-grid, .dashboard-grid { grid-template-columns: 1fr; }
   .settings-grid button { width: 100%; }
-  .results-table th, .results-table td { padding: 10px 9px; }
-  .results-table th:first-child, .results-table td:first-child { width: 52px; }
-  .results-table th:last-child, .result-seat { width: 72px; }
   .participant-row { grid-template-columns: 1fr 54px 54px auto; gap: 5px; padding: 9px 8px; }
   .participant-row > * { min-width: 0; overflow-wrap: anywhere; }
   .participant-row .small { padding-inline: 8px; }

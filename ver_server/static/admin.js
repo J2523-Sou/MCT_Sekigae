@@ -1,15 +1,20 @@
 const loginPanel = document.querySelector('#login-panel');
 const adminApp = document.querySelector('#admin-app');
 const notice = document.querySelector('#notice');
+let noticeTimer = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 }
 
 function setNotice(message, isOk = false) {
+  clearTimeout(noticeTimer);
   notice.hidden = !message;
   notice.textContent = message || '';
   notice.classList.toggle('ok', isOk);
+  if (message && isOk) {
+    noticeTimer = setTimeout(() => setNotice(''), 5000);
+  }
 }
 
 async function request(url, options = {}) {
@@ -20,6 +25,16 @@ async function request(url, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || '通信に失敗しました。');
   return data;
+}
+
+function captureScrollPositions(root = adminApp) {
+  return Array.from(root.querySelectorAll('.classroom-scroll'), (element) => element.scrollLeft);
+}
+
+function restoreScrollPositions(positions, root = adminApp) {
+  root.querySelectorAll('.classroom-scroll').forEach((element, index) => {
+    element.scrollLeft = positions[index] || 0;
+  });
 }
 
 function render(state) {
@@ -78,6 +93,7 @@ function render(state) {
           <button class="danger small" data-delete="${escapeHtml(person.id)}" aria-label="${escapeHtml(person.name)}を削除">削除</button>
         </div>`).join('')
     : '<p class="empty-state">まだ参加者はいません。</p>';
+  const scrollPositions = captureScrollPositions();
   adminApp.innerHTML = `
     <div class="toolbar">
       <span class="phase ${settings.phase}">${phaseText}</span>
@@ -120,10 +136,10 @@ function render(state) {
     <div class="dashboard-grid">
       <section class="card">
         <h2>結果の操作</h2>
-        <p class="help">同じ席を希望した人の中からランダムに1人を選び、残りの人には空いている席をランダムに割り当てます。</p>
+        <p class="help">まず抽選して発表待ちにし、その後に1人ずつ発表するか、全員へ最終公開します。</p>
         <div class="toolbar">
           ${settings.phase === 'voting'
-            ? '<button id="publish" class="primary">投票を締め切って結果を公開</button>'
+            ? '<button id="publish" class="primary">投票を締め切って抽選準備</button>'
             : '<button id="reopen" class="secondary">投票を再開</button>'}
           <button id="reset" class="danger">全データをリセット</button>
         </div>
@@ -132,9 +148,9 @@ function render(state) {
             <div class="seat-config-label"><span>発表状況</span><span>${revealCount} / ${announcementResults.length} 人</span></div>
             <p class="help">希望者が少ない席から発表し、投票の多かった席を最後に回します。</p>
             <div class="toolbar">
-              <button id="reveal-next" class="primary" ${allRevealed ? 'disabled' : ''}>次を発表</button>
-              <button id="reveal-all" class="secondary" ${allRevealed ? 'disabled' : ''}>すべて発表</button>
-              <button id="reveal-reset" class="secondary" ${revealCount === 0 ? 'disabled' : ''}>最初から発表</button>
+              <button id="reveal-next" class="primary" ${allRevealed ? 'disabled' : ''}>1人ずつ発表</button>
+              <button id="reveal-all" class="secondary final-publish" ${allRevealed ? 'disabled' : ''}>全員に最終公開</button>
+              <button id="reveal-reset" class="secondary" ${revealCount === 0 ? 'disabled' : ''}>未公開に戻す</button>
             </div>
             <div class="announcement-list">${announcementRows}</div>
           </div>` : ''}
@@ -145,6 +161,7 @@ function render(state) {
       </section>
     </div>`;
   bindActions();
+  restoreScrollPositions(scrollPositions);
 }
 
 function bindActions() {
@@ -192,10 +209,10 @@ async function saveSettings(event) {
 }
 
 async function publish() {
-  if (!confirm('投票を締め切り、抽選結果を全員に公開します。よろしいですか？')) return;
+  if (!confirm('投票を締め切って抽選します。この時点では参加者には結果を表示しません。よろしいですか？')) return;
   try {
     await request('/api/admin/publish', { method: 'POST', body: '{}' });
-    setNotice('結果を公開しました。', true);
+    setNotice('抽選が完了しました。1人ずつ発表するか、全員に最終公開してください。', true);
     await load();
   } catch (error) { setNotice(error.message); }
 }
@@ -210,8 +227,12 @@ async function reopen() {
 }
 
 async function updateReveal(action) {
+  if (action === 'all' && !confirm('全員の結果を参加者画面に最終公開します。よろしいですか？')) return;
+  if (action === 'reset' && !confirm('参加者画面の発表をいったん未公開に戻します。抽選結果は残ります。よろしいですか？')) return;
   try {
     await request('/api/admin/reveal', { method: 'POST', body: JSON.stringify({ action }) });
+    if (action === 'all') setNotice('全員に最終公開しました。', true);
+    if (action === 'reset') setNotice('発表を未公開に戻しました。', true);
     await load();
   } catch (error) { setNotice(error.message); }
 }
