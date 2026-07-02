@@ -27,12 +27,35 @@ function render(state) {
   const phaseText = settings.phase === 'results' ? '結果公開中' : '投票受付中';
   const excluded = new Set(excludedSeats);
   const gridMinWidth = settings.columns_count * 44 + Math.max(0, settings.columns_count - 1) * 6;
+  const mapMinWidth = settings.columns_count * 112 + Math.max(0, settings.columns_count - 1) * 6;
   const seatButtons = Array.from({ length: settings.rows_count }, (_, row) =>
     Array.from({ length: settings.columns_count }, (_, column) => {
       const code = `${row + 1}-${column + 1}`;
       const selected = excluded.has(code);
       const label = `${row + 1}行 ${column + 1}列`;
       return `<button type="button" class="seat${selected ? ' excluded' : ''}" data-exclude="${code}" aria-pressed="${selected}" aria-label="${label}${selected ? '：使用しない席' : ''}" title="${label}"><span class="seat-number">${code}</span></button>`;
+    }).join('')
+  ).join('');
+  const participantsByVote = participants.reduce((groups, person) => {
+    if (!person.vote) return groups;
+    if (!groups.has(person.vote)) groups.set(person.vote, []);
+    groups.get(person.vote).push(person);
+    return groups;
+  }, new Map());
+  const preferenceSeats = Array.from({ length: settings.rows_count }, (_, row) =>
+    Array.from({ length: settings.columns_count }, (_, column) => {
+      const code = `${row + 1}-${column + 1}`;
+      const selected = excluded.has(code);
+      const hopefuls = participantsByVote.get(code) || [];
+      const names = hopefuls.length
+        ? hopefuls.map((person) => `<span>${escapeHtml(person.name)}</span>`).join('')
+        : '<span class="muted">希望なし</span>';
+      return `
+        <div class="seat seat-card preference-seat${selected ? ' excluded' : ''}${hopefuls.length ? ' has-hopefuls' : ''}">
+          <span class="seat-number">${code}</span>
+          <span class="seat-count">${selected ? '除外' : `${hopefuls.length}人`}</span>
+          <div class="seat-people">${selected ? '<span>使用しない</span>' : names}</div>
+        </div>`;
     }).join('')
   ).join('');
   const revealCount = Math.min(settings.result_reveal_count ?? 0, announcementResults.length);
@@ -83,6 +106,16 @@ function render(state) {
         <button class="secondary" type="submit">設定を保存</button>
       </form>
       <p class="warning-box">行数・列数または使わない席を変更すると、現在の希望席と公開結果は消去されます。参加者名は残ります。</p>
+    </section>
+    <section class="card">
+      <h2>希望席マップ</h2>
+      <p class="help">各席を希望している参加者を座席表の形で確認できます。</p>
+      <div class="classroom-scroll">
+        <div class="classroom-layout preference-layout" style="--columns: ${settings.columns_count}; --grid-min-width: ${mapMinWidth}px">
+          <div class="teacher-desk">教卓</div>
+          <div class="seat-grid preference-seat-grid">${preferenceSeats}</div>
+        </div>
+      </div>
     </section>
     <div class="dashboard-grid">
       <section class="card">

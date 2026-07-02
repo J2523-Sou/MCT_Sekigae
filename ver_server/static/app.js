@@ -3,6 +3,7 @@ const titleElement = document.querySelector('#title');
 const statusElement = document.querySelector('#status');
 const notice = document.querySelector('#notice');
 let enteredThisVisit = false;
+let lastSeenResultCount = 0;
 
 function setNotice(message, isOk = false) {
   notice.hidden = !message;
@@ -53,6 +54,47 @@ function makeClassroomLayout(state, selected) {
   teacherDesk.className = 'teacher-desk';
   teacherDesk.textContent = '教卓';
   layout.append(teacherDesk, makeSeatGrid(state, selected));
+  scroll.append(layout);
+  return scroll;
+}
+
+function makeResultGrid(state) {
+  const resultBySeat = new Map(state.results.map((result) => [result.seat, result]));
+  const grid = document.createElement('div');
+  grid.className = 'seat-grid result-seat-grid';
+  for (let row = 1; row <= state.rows; row += 1) {
+    for (let column = 1; column <= state.columns; column += 1) {
+      const code = `${row}-${column}`;
+      const isExcluded = state.excludedSeats.includes(code);
+      const result = resultBySeat.get(code);
+      const seat = document.createElement('div');
+      seat.className = `seat seat-card${isExcluded ? ' excluded' : ''}${result ? ' assigned' : ''}`;
+      seat.title = isExcluded ? `${row}行 ${column}列：使用しない席` : `${row}行 ${column}列`;
+      seat.setAttribute('aria-label', isExcluded ? `${row}行 ${column}列：使用しない席` : `${row}行 ${column}列：${result?.name || '未発表'}`);
+      const number = document.createElement('span');
+      number.className = 'seat-number';
+      number.textContent = code;
+      const occupant = document.createElement('strong');
+      occupant.className = 'seat-person';
+      occupant.textContent = isExcluded ? '使用しない' : (result?.name || '未発表');
+      seat.append(number, occupant);
+      grid.append(seat);
+    }
+  }
+  return grid;
+}
+
+function makeResultClassroomLayout(state) {
+  const scroll = document.createElement('div');
+  scroll.className = 'classroom-scroll';
+  const layout = document.createElement('div');
+  layout.className = 'classroom-layout result-layout';
+  layout.style.setProperty('--columns', state.columns);
+  layout.style.setProperty('--grid-min-width', `${state.columns * 82 + Math.max(0, state.columns - 1) * 6}px`);
+  const teacherDesk = document.createElement('div');
+  teacherDesk.className = 'teacher-desk';
+  teacherDesk.textContent = '教卓';
+  layout.append(teacherDesk, makeResultGrid(state));
   scroll.append(layout);
   return scroll;
 }
@@ -117,10 +159,16 @@ function renderVoting(state) {
 function renderResults(state) {
   const section = document.createElement('section');
   section.className = 'card';
+  const revealedCount = state.results.length;
+  if (revealedCount > lastSeenResultCount) {
+    setNotice(`${revealedCount - lastSeenResultCount}人分の結果が発表されました。`, true);
+  }
+  lastSeenResultCount = revealedCount;
   const pendingText = state.pendingResultCount
     ? `未発表 ${state.pendingResultCount} 人。順番に発表中です。`
     : 'すべての結果を発表しました。';
   section.innerHTML = `<h2>席替え結果</h2><p class="help">管理者が抽選して結果を公開しました。${pendingText}</p>`;
+  section.append(makeResultClassroomLayout(state));
   const results = document.createElement('div');
   results.className = 'results';
   if (!state.results.length) {
@@ -157,6 +205,7 @@ function render(state) {
     ? `結果を公開中 · 参加者 ${state.participantCount} 人`
     : `投票受付中 · 参加者 ${state.participantCount} 人`;
   if (state.phase === 'results') return renderResults(state);
+  lastSeenResultCount = 0;
   if (!enteredThisVisit || !state.myParticipant) {
     // The public state is polled regularly.  Keep the existing form while the
     // user is entering their name so a poll never clears the draft.
