@@ -32,6 +32,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
 DB_PATH = ROOT / "seating.db"
+REVEAL_ALL_COUNT = 1_000_000
 HOST = os.environ.get("SEATING_HOST", "0.0.0.0")
 # Azure App Service supplies the port in PORT.  SEATING_PORT is kept as the
 # explicit override used by the local launcher.
@@ -62,6 +63,7 @@ def initialize_database():
                 title TEXT NOT NULL,
                 rows_count INTEGER NOT NULL,
                 columns_count INTEGER NOT NULL,
+                result_reveal_count INTEGER NOT NULL DEFAULT 0,
                 phase TEXT NOT NULL CHECK (phase IN ('voting', 'results')),
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -92,6 +94,16 @@ def initialize_database():
             VALUES (1, '席替え投票', 5, 6, 'voting')
             """
         )
+        columns = {
+            row["name"]
+            for row in db.execute("PRAGMA table_info(settings)").fetchall()
+        }
+        if "result_reveal_count" not in columns:
+            db.execute("ALTER TABLE settings ADD COLUMN result_reveal_count INTEGER NOT NULL DEFAULT 0")
+            db.execute(
+                "UPDATE settings SET result_reveal_count = ? WHERE phase = 'results'",
+                (REVEAL_ALL_COUNT,),
+            )
 
 
 def seat_codes(rows_count, columns_count):
@@ -111,6 +123,38 @@ def valid_seat(db, code):
 
 def excluded_seat_codes(db):
     return [row["seat_code"] for row in db.execute("SELECT seat_code FROM excluded_seats ORDER BY seat_code")]
+
+
+def announcement_results(db):
+    return [
+        {
+            "id": row["id"],
+            "name": row["name"],
+            "seat": row["seat"],
+            "voteCount": row["vote_count"],
+        }
+        for row in db.execute(
+            """
+            WITH vote_counts AS (
+                SELECT seat_code, COUNT(*) AS vote_count FROM votes GROUP BY seat_code
+            )
+            SELECT
+                p.id,
+                p.name,
+                a.seat_code AS seat,
+                COALESCE(vc.vote_count, 0) AS vote_count
+            FROM participants p
+            LEFT JOIN assignments a ON a.participant_id = p.id
+            LEFT JOIN vote_counts vc ON vc.seat_code = a.seat_code
+            ORDER BY
+                CASE WHEN a.seat_code IS NULL THEN 0 ELSE 1 END,
+                COALESCE(vc.vote_count, 0),
+                CAST(substr(a.seat_code, 1, instr(a.seat_code, '-') - 1) AS INTEGER),
+                CAST(substr(a.seat_code, instr(a.seat_code, '-') + 1) AS INTEGER),
+                p.name
+            """
+        )
+    ]
 
 
 def sign(value):
@@ -231,6 +275,8 @@ class SeatingHandler(BaseHTTPRequestHandler):
                 return self.publish_results()
             if path == "/api/admin/reopen":
                 return self.reopen_voting()
+            if path == "/api/admin/reveal":
+                return self.update_result_reveal(data)
             if path == "/api/admin/reset":
                 return self.reset_all()
             if path == "/api/admin/participant/delete":
@@ -275,13 +321,13 @@ class SeatingHandler(BaseHTTPRequestHandler):
                 "myParticipant": dict(participant) if participant else None,
             }
             if settings["phase"] == "results":
+                ordered_results = announcement_results(db)
+                reveal_count = min(settings["result_reveal_count"], len(ordered_results))
+                payload["resultCount"] = len(ordered_results)
+                payload["pendingResultCount"] = len(ordered_results) - reveal_count
                 payload["results"] = [
-                    dict(row)
-                    for row in db.execute(
-                        "SELECT p.name, a.seat_code AS seat FROM participants p "
-                        "LEFT JOIN assignments a ON a.participant_id = p.id "
-                        "ORDER BY CASE WHEN a.seat_code IS NULL THEN 1 ELSE 0 END, a.seat_code, p.name"
-                    )
+                    {"name": result["name"], "seat": result["seat"]}
+                    for result in ordered_results[:reveal_count]
                 ]
         self.send_json(payload)
 
@@ -303,6 +349,7 @@ class SeatingHandler(BaseHTTPRequestHandler):
                     "settings": dict(settings),
                     "excludedSeats": excluded_seat_codes(db),
                     "participants": participants,
+                    "announcementResults": announcement_results(db) if settings["phase"] == "results" else [],
                 }
             )
 
@@ -394,7 +441,7 @@ class SeatingHandler(BaseHTTPRequestHandler):
             if layout_changed or exclusions_changed:
                 db.execute("DELETE FROM votes")
                 db.execute("DELETE FROM assignments")
-                db.execute("UPDATE settings SET phase = 'voting' WHERE id = 1")
+                db.execute("UPDATE settings SET phase = 'voting', result_reveal_count = 0 WHERE id = 1")
             db.execute("DELETE FROM excluded_seats")
             db.executemany("INSERT INTO excluded_seats (seat_code) VALUES (?)", ((seat,) for seat in sorted(excluded)))
         self.send_json({"ok": True, "seatsChanged": layout_changed or exclusions_changed})
@@ -440,7 +487,9 @@ class SeatingHandler(BaseHTTPRequestHandler):
             db.executemany(
                 "INSERT INTO assignments (participant_id, seat_code) VALUES (?, ?)", assigned.items()
             )
-            db.execute("UPDATE settings SET phase = 'results', updated_at = CURRENT_TIMESTAMP WHERE id = 1")
+            db.execute(
+                "UPDATE settings SET phase = 'results', result_reveal_count = 0, updated_at = CURRENT_TIMESTAMP WHERE id = 1"
+            )
         self.send_json({"ok": True, "assigned": len(assigned)})
 
     def reopen_voting(self):
@@ -448,8 +497,32 @@ class SeatingHandler(BaseHTTPRequestHandler):
             return
         with database() as db:
             db.execute("DELETE FROM assignments")
-            db.execute("UPDATE settings SET phase = 'voting', updated_at = CURRENT_TIMESTAMP WHERE id = 1")
+            db.execute("UPDATE settings SET phase = 'voting', result_reveal_count = 0, updated_at = CURRENT_TIMESTAMP WHERE id = 1")
         self.send_json({"ok": True})
+
+    def update_result_reveal(self, data):
+        if not self.require_admin():
+            return
+        action = str(data.get("action", ""))
+        if action not in {"next", "all", "reset"}:
+            raise ValueError("発表操作の指定が不正です。")
+        with database() as db:
+            settings = current_settings(db)
+            if settings["phase"] != "results":
+                raise ValueError("結果公開後に操作してください。")
+            total = len(announcement_results(db))
+            current = min(settings["result_reveal_count"], total)
+            if action == "next":
+                next_count = min(current + 1, total)
+            elif action == "all":
+                next_count = total
+            else:
+                next_count = 0
+            db.execute(
+                "UPDATE settings SET result_reveal_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+                (next_count,),
+            )
+        self.send_json({"ok": True, "revealed": next_count, "total": total})
 
     def reset_all(self):
         if not self.require_admin():
@@ -458,7 +531,7 @@ class SeatingHandler(BaseHTTPRequestHandler):
             db.execute("DELETE FROM participants")
             db.execute("DELETE FROM votes")
             db.execute("DELETE FROM assignments")
-            db.execute("UPDATE settings SET phase = 'voting', updated_at = CURRENT_TIMESTAMP WHERE id = 1")
+            db.execute("UPDATE settings SET phase = 'voting', result_reveal_count = 0, updated_at = CURRENT_TIMESTAMP WHERE id = 1")
         self.send_json({"ok": True})
 
     def delete_participant(self, data):

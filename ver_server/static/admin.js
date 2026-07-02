@@ -23,16 +23,29 @@ async function request(url, options = {}) {
 }
 
 function render(state) {
-  const { settings, excludedSeats, participants } = state;
+  const { settings, excludedSeats, participants, announcementResults = [] } = state;
   const phaseText = settings.phase === 'results' ? '結果公開中' : '投票受付中';
   const excluded = new Set(excludedSeats);
+  const gridMinWidth = settings.columns_count * 44 + Math.max(0, settings.columns_count - 1) * 6;
   const seatButtons = Array.from({ length: settings.rows_count }, (_, row) =>
     Array.from({ length: settings.columns_count }, (_, column) => {
       const code = `${row + 1}-${column + 1}`;
       const selected = excluded.has(code);
-      return `<button type="button" class="seat${selected ? ' excluded' : ''}" data-exclude="${code}" aria-pressed="${selected}"><span class="seat-label">${row + 1}行 ${column + 1}列</span><span class="seat-number">${code}</span></button>`;
+      const label = `${row + 1}行 ${column + 1}列`;
+      return `<button type="button" class="seat${selected ? ' excluded' : ''}" data-exclude="${code}" aria-pressed="${selected}" aria-label="${label}${selected ? '：使用しない席' : ''}" title="${label}"><span class="seat-number">${code}</span></button>`;
     }).join('')
   ).join('');
+  const revealCount = Math.min(settings.result_reveal_count ?? 0, announcementResults.length);
+  const allRevealed = revealCount >= announcementResults.length;
+  const announcementRows = announcementResults.length
+    ? announcementResults.map((result, index) => `
+        <div class="announcement-row${index < revealCount ? ' revealed' : ''}">
+          <span class="announcement-order">${index + 1}</span>
+          <strong>${escapeHtml(result.name)}</strong>
+          <span class="muted">${escapeHtml(result.seat || '未配置')}</span>
+          <span class="vote-count">希望 ${result.voteCount} 人</span>
+        </div>`).join('')
+    : '<p class="empty-state">結果公開後に発表順が表示されます。</p>';
   const rows = participants.length
     ? participants.map((person) => `
         <div class="participant-row">
@@ -60,7 +73,12 @@ function render(state) {
         </div>
         <div>
           <div class="seat-config-label"><span>使わない席を選択</span><span id="excluded-count">${excludedSeats.length} 席を除外中</span></div>
-          <div class="seat-grid admin-seat-grid" style="--columns: ${settings.columns_count}">${seatButtons}</div>
+          <div class="classroom-scroll">
+            <div class="classroom-layout" style="--columns: ${settings.columns_count}; --grid-min-width: ${gridMinWidth}px">
+              <div class="teacher-desk">教卓</div>
+              <div class="seat-grid admin-seat-grid">${seatButtons}</div>
+            </div>
+          </div>
         </div>
         <button class="secondary" type="submit">設定を保存</button>
       </form>
@@ -76,6 +94,17 @@ function render(state) {
             : '<button id="reopen" class="secondary">投票を再開</button>'}
           <button id="reset" class="danger">全データをリセット</button>
         </div>
+        ${settings.phase === 'results' ? `
+          <div class="reveal-panel">
+            <div class="seat-config-label"><span>発表状況</span><span>${revealCount} / ${announcementResults.length} 人</span></div>
+            <p class="help">希望者が少ない席から発表し、投票の多かった席を最後に回します。</p>
+            <div class="toolbar">
+              <button id="reveal-next" class="primary" ${allRevealed ? 'disabled' : ''}>次を発表</button>
+              <button id="reveal-all" class="secondary" ${allRevealed ? 'disabled' : ''}>すべて発表</button>
+              <button id="reveal-reset" class="secondary" ${revealCount === 0 ? 'disabled' : ''}>最初から発表</button>
+            </div>
+            <div class="announcement-list">${announcementRows}</div>
+          </div>` : ''}
       </section>
       <section class="card">
         <h2>参加者と希望席</h2>
@@ -98,6 +127,9 @@ function bindActions() {
   }));
   document.querySelector('#publish')?.addEventListener('click', publish);
   document.querySelector('#reopen')?.addEventListener('click', reopen);
+  document.querySelector('#reveal-next')?.addEventListener('click', () => updateReveal('next'));
+  document.querySelector('#reveal-all')?.addEventListener('click', () => updateReveal('all'));
+  document.querySelector('#reveal-reset')?.addEventListener('click', () => updateReveal('reset'));
   document.querySelector('#reset').addEventListener('click', reset);
   document.querySelectorAll('[data-delete]').forEach((button) => button.addEventListener('click', () => deleteParticipant(button.dataset.delete)));
 }
@@ -140,6 +172,13 @@ async function reopen() {
   try {
     await request('/api/admin/reopen', { method: 'POST', body: '{}' });
     setNotice('投票を再開しました。希望席はそのまま残っています。', true);
+    await load();
+  } catch (error) { setNotice(error.message); }
+}
+
+async function updateReveal(action) {
+  try {
+    await request('/api/admin/reveal', { method: 'POST', body: JSON.stringify({ action }) });
     await load();
   } catch (error) { setNotice(error.message); }
 }

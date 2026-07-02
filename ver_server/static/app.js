@@ -23,7 +23,6 @@ async function request(url, options = {}) {
 function makeSeatGrid(state, selected) {
   const grid = document.createElement('div');
   grid.className = 'seat-grid';
-  grid.style.setProperty('--columns', state.columns);
   for (let row = 1; row <= state.rows; row += 1) {
     for (let column = 1; column <= state.columns; column += 1) {
       const code = `${row}-${column}`;
@@ -31,8 +30,9 @@ function makeSeatGrid(state, selected) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `seat${code === selected ? ' selected' : ''}${isExcluded ? ' excluded' : ''}`;
-      button.innerHTML = `<span class="seat-label">${row}行 ${column}列</span><span class="seat-number">${code}</span>`;
+      button.innerHTML = `<span class="seat-number">${code}</span>`;
       button.disabled = isExcluded;
+      button.title = isExcluded ? `${row}行 ${column}列：使用しない席` : `${row}行 ${column}列`;
       button.setAttribute('aria-pressed', String(code === selected));
       button.setAttribute('aria-label', isExcluded ? `${row}行 ${column}列：使用しない席` : `${row}行 ${column}列を希望する`);
       if (!isExcluded) button.addEventListener('click', () => castVote(code, button));
@@ -40,6 +40,21 @@ function makeSeatGrid(state, selected) {
     }
   }
   return grid;
+}
+
+function makeClassroomLayout(state, selected) {
+  const scroll = document.createElement('div');
+  scroll.className = 'classroom-scroll';
+  const layout = document.createElement('div');
+  layout.className = 'classroom-layout';
+  layout.style.setProperty('--columns', state.columns);
+  layout.style.setProperty('--grid-min-width', `${state.columns * 44 + Math.max(0, state.columns - 1) * 6}px`);
+  const teacherDesk = document.createElement('div');
+  teacherDesk.className = 'teacher-desk';
+  teacherDesk.textContent = '教卓';
+  layout.append(teacherDesk, makeSeatGrid(state, selected));
+  scroll.append(layout);
+  return scroll;
 }
 
 async function castVote(seat, button) {
@@ -91,7 +106,7 @@ function renderVoting(state) {
   const name = document.createElement('strong');
   name.textContent = mine.name;
   heading.append(name);
-  section.append(heading, makeSeatGrid(state, mine.vote));
+  section.append(heading, makeClassroomLayout(state, mine.vote));
   const note = document.createElement('p');
   note.className = 'vote-note';
   note.textContent = mine.vote ? `現在の希望：${mine.vote}` : 'まだ席を選んでいません。';
@@ -102,24 +117,33 @@ function renderVoting(state) {
 function renderResults(state) {
   const section = document.createElement('section');
   section.className = 'card';
-  section.innerHTML = '<h2>席替え結果</h2><p class="help">管理者が抽選して結果を公開しました。</p>';
+  const pendingText = state.pendingResultCount
+    ? `未発表 ${state.pendingResultCount} 人。順番に発表中です。`
+    : 'すべての結果を発表しました。';
+  section.innerHTML = `<h2>席替え結果</h2><p class="help">管理者が抽選して結果を公開しました。${pendingText}</p>`;
   const results = document.createElement('div');
   results.className = 'results';
-  if (!state.results.length) results.innerHTML = '<p class="empty-state">参加者がいません。</p>';
+  if (!state.results.length) {
+    results.innerHTML = state.resultCount
+      ? '<p class="empty-state">まだ発表されていません。</p>'
+      : '<p class="empty-state">参加者がいません。</p>';
+  }
   const table = document.createElement('table');
   table.className = 'results-table';
-  table.innerHTML = '<thead><tr><th scope="col">名前</th><th scope="col">席</th></tr></thead>';
+  table.innerHTML = '<thead><tr><th scope="col">発表順</th><th scope="col">名前</th><th scope="col">席</th></tr></thead>';
   const body = document.createElement('tbody');
-  for (const result of state.results) {
+  state.results.forEach((result, index) => {
     const row = document.createElement('tr');
+    const order = document.createElement('td');
+    order.textContent = String(index + 1);
     const name = document.createElement('td');
     name.textContent = result.name;
     const seat = document.createElement('td');
     seat.className = 'result-seat';
     seat.textContent = result.seat || '未配置';
-    row.append(name, seat);
+    row.append(order, name, seat);
     body.append(row);
-  }
+  });
   table.append(body);
   if (state.results.length) results.append(table);
   section.append(results);
